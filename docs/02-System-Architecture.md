@@ -1,3 +1,4 @@
+'''markdown
 # System Architecture Document (SAD)
 
 **Project:** Doc2ID AI  
@@ -107,6 +108,9 @@ Doc2ID AI utilizes a **Cloud-Native, Event-Driven Microservices-Oriented Archite
 │  (Ingestion Workers & PDF Generation Workers)    ├───┘ 6. Read/Write 
 │                                                  │        Assets
 └──────────────────────────────────────────────────┘
+```
+
+---
 
 ## 5. CORE DATA FLOWS
 
