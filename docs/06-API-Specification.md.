@@ -1,0 +1,216 @@
+```markdown
+# API Specification Document
+
+**Project:** Doc2ID AI  
+**Document Version:** 1.0 (Enterprise Specification)  
+**Status:** Pending Approval  
+**Author:** Principal API Architect & Senior Backend Engineer  
+
+---
+
+## 1. DOCUMENT INFORMATION
+*   **Title:** Doc2ID AI Enterprise REST API Specification
+*   **Purpose:** Defines the complete HTTP/REST and WebSocket interface required for the Doc2ID AI frontend to interact with the backend services.
+*   **Audience:** Backend Engineers, Frontend Engineers, QA Testers.
+
+## 2. API OVERVIEW
+*   **Architecture:** RESTful principles with resource-oriented URLs.
+*   **Versioning Strategy:** URI versioning (`/api/v1`).
+*   **Base URL (Production):** `https://api.doc2id.ai/api/v1`
+*   **Authentication:** Stateless JWT via the `Authorization: Bearer <token>` header.
+*   **Content Types:** Strictly `application/json` for requests and responses. Binary uploads use pre-signed S3 direct uploads rather than saturating the API node.
+*   **Tenant Scoping:** All core resource requests implicitly route to the tenant based on an `X-Organization-ID` header (or inferred from the user's default organization in the JWT).
+
+## 3. AUTHENTICATION ENDPOINTS
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `POST` | `/auth/register` | Create a new user account. |
+| `POST` | `/auth/login` | Authenticate user; returns JWT & Refresh Token. |
+| `POST` | `/auth/logout` | Invalidate current refresh token. |
+| `POST` | `/auth/refresh` | Exchange a valid refresh token for a new JWT. |
+| `POST` | `/auth/forgot-password` | Send password reset link to email. |
+| `POST` | `/auth/reset-password` | Submit new password with reset token. |
+| `POST` | `/auth/verify-email` | Verify email ownership via token. |
+
+## 4. ORGANIZATION ENDPOINTS
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `POST` | `/organizations` | Create a new organization. |
+| `GET` | `/organizations/current`| Get the currently active organization details. |
+| `PUT` | `/organizations/current`| Update org details (Name, Timezone). |
+| `POST` | `/organizations/members`| Invite user to org via email. |
+| `GET` | `/organizations/members`| List all members in the organization. |
+| `DELETE`| `/organizations/members/{id}`| Remove user from the organization. |
+
+## 5. USER/PROFILE ENDPOINTS
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/users/me` | Get current user's profile. |
+| `PUT` | `/users/me` | Update name and preferences. |
+| `PUT` | `/users/me/password` | Change account password. |
+| `POST` | `/users/me/avatar` | Request S3 URL to upload profile avatar. |
+
+## 6. PROJECT ENDPOINTS
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `POST` | `/projects` | Create a new ID generation project. |
+| `GET` | `/projects` | List all projects (supports pagination/filtering). |
+| `GET` | `/projects/{id}` | Get project details and current status. |
+| `PUT` | `/projects/{id}` | Update project name or description. |
+| `POST` | `/projects/{id}/archive`| Soft archive a project. |
+| `DELETE`| `/projects/{id}` | Hard delete (requires Owner/Admin role). |
+
+## 7. SPREADSHEET IMPORT API
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `POST` | `/projects/{id}/imports` | Submit a parsed spreadsheet payload. |
+| `GET` | `/projects/{id}/records` | List extracted rows (Paginated). |
+| `PUT` | `/records/{record_id}` | Manually update a specific row's data. |
+| `DELETE`| `/records/{record_id}` | Delete a specific row from the batch. |
+
+## 8. PHOTO UPLOAD API
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `POST` | `/projects/{id}/photos/presigned` | Request S3 PUT URL for massive ZIP. |
+| `POST` | `/projects/{id}/photos/complete` | Signal ZIP upload done; triggers extraction worker. |
+| `GET` | `/projects/{id}/photos` | List extracted thumbnails. |
+| `POST` | `/projects/{id}/photos/match`| Trigger auto-match algorithm (Filename to Row). |
+| `PUT` | `/records/{record_id}/photo` | Manually bind a photo ID to a record ID. |
+
+## 9. TEMPLATE API
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `POST` | `/templates` | Create a blank template. |
+| `GET` | `/templates` | List available templates (Global + Org). |
+| `GET` | `/templates/{id}` | Get template JSON payload. |
+| `PUT` | `/templates/{id}` | Update template details. |
+| `POST` | `/templates/{id}/versions`| Save canvas JSON as an immutable version. |
+| `POST` | `/templates/{id}/duplicate`| Clone an existing template. |
+| `POST` | `/templates/{id}/preview`| Render a single test card using Row 1 data. |
+
+## 10. GENERATION API
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `POST` | `/projects/{id}/generate`| Start async generation. Returns `job_id`. |
+| `GET` | `/jobs/{job_id}` | Poll current job status (Cards done/total). |
+| `POST` | `/jobs/{job_id}/pause` | Pause rendering worker. |
+| `POST` | `/jobs/{job_id}/resume` | Resume rendering worker. |
+| `POST` | `/jobs/{job_id}/cancel` | Abort generation batch. |
+| `POST` | `/jobs/{job_id}/retry` | Retry specifically failed cards. |
+
+## 11. DOWNLOADS API
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/downloads` | List all historical generated files. |
+| `GET` | `/downloads/{file_id}/link`| Get secure, 15-min pre-signed S3 URL for PDF/ZIP. |
+
+## 12. NOTIFICATIONS API
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/notifications` | List user's notifications. |
+| `PUT` | `/notifications/{id}/read`| Mark specific notification as read. |
+| `POST` | `/notifications/read-all` | Mark all notifications as read. |
+
+## 13. AUDIT LOG API
+*   **`GET`** `/organizations/current/audit-logs`: (Admin only) List all historical system actions.
+
+## 14. SETTINGS API
+*   **`GET/PUT`** `/organizations/current/settings`: Manage organization-level JSONB configurations.
+
+## 15. BILLING API (FUTURE)
+*   **`GET`** `/billing/usage`: Check current generation quota limits.
+*   **`POST`** `/billing/portal`: Generate Stripe Customer Portal session URL.
+
+## 16. WEBSOCKET EVENTS
+A WebSocket connection is established at `wss://api.doc2id.ai/ws`. The client listens for:
+*   `UPLOAD_PROGRESS`: Real-time bytes extracted from ZIP.
+*   `GENERATION_PROGRESS`: Stream of `{ jobId, processed: 450, total: 1000 }`.
+*   `JOB_COMPLETED`: Generation finished, triggers UI update.
+*   `JOB_FAILED`: Generation halted due to fatal error.
+*   `NEW_NOTIFICATION`: Triggers bell icon badge increment.
+
+---
+
+## 17. REQUEST AND RESPONSE EXAMPLES
+
+### Example 1: Standard Success Response (List Projects)
+```http
+GET /api/v1/projects?page=1&limit=2
+Authorization: Bearer eyJhb...
+X-Organization-ID: 123e4567-e89b-12d3-a456-426614174000
+```
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "project_abc123",
+      "name": "Staff IDs 2026",
+      "status": "DRAFT",
+      "created_at": "2026-07-09T10:00:00Z"
+    }
+  ],
+  "meta": {
+    "pagination": { "page": 1, "limit": 2, "total": 45, "total_pages": 23 }
+  }
+}
+```
+
+### Example 2: Error Response (Validation Failure)
+```http
+POST /api/v1/auth/register
+```
+```json
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Invalid request payload.",
+    "details": [
+      { "field": "password", "message": "Password must be at least 8 characters." }
+    ]
+  }
+}
+```
+
+## 18. HTTP STATUS CODES
+*   **200 OK:** Request succeeded.
+*   **201 Created:** Resource successfully created.
+*   **202 Accepted:** Request accepted for asynchronous processing (e.g., triggering generation).
+*   **204 No Content:** Request succeeded, no body returned (e.g., successful DELETE).
+*   **400 Bad Request:** Malformed payload or validation error.
+*   **401 Unauthorized:** Missing, invalid, or expired JWT.
+*   **403 Forbidden:** User lacks RBAC permissions for the action.
+*   **404 Not Found:** Resource does not exist.
+*   **409 Conflict:** Resource state conflict (e.g., email already exists).
+*   **422 Unprocessable Entity:** Syntactically correct but semantically invalid (e.g., mapping to a non-existent column).
+*   **429 Too Many Requests:** Rate limit exceeded.
+*   **500 Internal Server Error:** Unhandled backend crash.
+
+## 19. ERROR HANDLING STANDARD
+All errors conform to the standard envelope shown in Section 17. Client applications should primarily rely on `error.code` (e.g., `AUTHORIZATION_FAILED`) for programmatic logic, and `error.message` for user-facing toasts.
+
+## 20. SECURITY
+*   **JWT Authentication:** Short-lived access tokens (15m) + secure HttpOnly refresh tokens.
+*   **RBAC Enforcement:** Middleware strictly checks the required role (Owner, Admin, Editor) against the user's mapping in the `organization_members` table before reaching the controller.
+*   **Rate Limiting:** IP-based limiting via Redis (e.g., 5 login attempts per minute).
+*   **CORS:** `Access-Control-Allow-Origin` strictly whitelisted to frontend URLs.
+*   **Idempotency:** Non-safe mutating endpoints (like `/generate`) support an `Idempotency-Key` header to prevent double-charging or dual-generation if a client retries a timeout.
+
+## 21. API BEST PRACTICES
+*   **Pagination:** All collection endpoints use limit/offset pagination via the `?page=` and `?limit=` query parameters.
+*   **Filtering & Sorting:** Filter via query params (`?status=DONE`). Sort via `?sort=-created_at`.
+*   **Search:** Text search via `?q=query`.
+*   **Cursor Pagination:** `import_records` containing 100,000+ rows utilizes cursor-based pagination (`?after=uuid`) instead of offset for performance optimization.
+
+## 22. OPENAPI/SWAGGER COMPLIANCE
+The API will be fully documented using OpenAPI 3.0 specification. The definitions will be generated automatically from the Zod validation schemas and Express route definitions using libraries like `@asteasolutions/zod-to-openapi`. The Swagger UI will be accessible at `/api/docs` in non-production environments.
+
+## 23. FUTURE API ROADMAP
+*   **Public API:** Allowing enterprise customers to generate an API Key to hit `/projects/{id}/generate` directly from their own HR systems (like Workday or BambooHR).
+*   **Webhooks:** Endpoints to register webhook URLs that trigger when a generation job completes.
+*   **SDK Support:** Official Node.js and Python SDKs wrapping the REST API for seamless developer integration.
+
+---
+**End of API Specification**
+```
